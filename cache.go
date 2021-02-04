@@ -79,20 +79,19 @@ func (cache *Cache) SetBlock(is bool) {
 
 // Update 主动更新
 func (cache *Cache) Update() {
-
 	cache.valueLock.Lock()
 	defer cache.valueLock.Unlock()
 
-	if cache.value == nil {
-		cache.value = cache.updateMehtod()
-		if cache.value == nil {
-			log.Println("warning data first update is nil")
-		}
+	if cache.first() {
 		return
 	}
 
 	if cache.isBlock {
 		v := cache.updateMehtod()
+		if cache.updateCond != nil && cache.updateCond.cond == nil {
+			cache.updateCond.updateAt = time.Now()
+		}
+
 		switch value := v.(type) {
 		case nil:
 		case error:
@@ -100,20 +99,28 @@ func (cache *Cache) Update() {
 		default:
 			cache.value = v
 		}
-
 		return
 	}
 
-	switch {
-	case cache.updateCond.cond != nil:
-		if cache.updateCond.cond() {
+	// 非block
+	if atomic.CompareAndSwapInt32(&cache.isUpdating, 0, 1) {
+		switch {
+		case cache.updateCond.cond != nil:
+			if cache.updateCond.cond() {
+				cache.asyncUpdating()
+				return
+			}
+		case time.Since(cache.updateCond.updateAt) >= cache.updateCond.interval:
 			cache.asyncUpdating()
+			return
+		default:
 		}
-	case time.Since(cache.updateCond.updateAt) >= cache.updateCond.interval:
-		cache.asyncUpdating()
+
+		atomic.StoreInt32(&cache.isUpdating, 0)
 	}
 }
 
+// Value 获取缓存的值
 func (cache *Cache) Value() interface{} {
 
 	defer func() {
@@ -122,6 +129,7 @@ func (cache *Cache) Value() interface{} {
 		}
 	}()
 
+	// 如果有更新条件进入更新条件
 	if cache.updateCond != nil {
 		cache.Update()
 		return cache.value
@@ -129,39 +137,58 @@ func (cache *Cache) Value() interface{} {
 
 	cache.valueLock.Lock()
 	defer cache.valueLock.Unlock()
-	if cache.value == nil {
-		cache.value = cache.updateMehtod()
-		if cache.value == nil {
-			log.Println("warning data first update is nil")
-		}
-	}
+
+	// 第一次更新
+	cache.first()
 	return cache.value
 }
 
+func (cache *Cache) first() bool {
+	if cache.value == nil {
+		v := cache.updateMehtod()
+		if cache.updateCond != nil && cache.updateCond.cond == nil {
+			cache.updateCond.updateAt = time.Now()
+		}
+		switch value := v.(type) {
+		case nil:
+
+		case error:
+			cache.onError(value)
+		default:
+			cache.value = v
+		}
+		return true
+	}
+	return false
+}
+
 func (cache *Cache) asyncUpdating() {
-	if atomic.CompareAndSwapInt32(&cache.isUpdating, 0, 1) {
-		go func() {
-			defer atomic.StoreInt32(&cache.isUpdating, 0)
-			defer func() {
-				if err := recover(); err != nil {
-					log.Println("recover:", err)
-				}
-			}()
 
-			v := cache.updateMehtod()
-
-			switch value := v.(type) {
-			case nil:
-				return
-			case error:
-				cache.onError(value)
-			default:
-				cache.valueLock.Lock()
-				cache.value = v
-				cache.valueLock.Unlock()
+	go func() {
+		defer atomic.StoreInt32(&cache.isUpdating, 0)
+		defer func() {
+			if err := recover(); err != nil {
+				log.Println("recover:", err)
 			}
 		}()
-	}
+
+		v := cache.updateMehtod()
+		cache.valueLock.Lock()
+		defer cache.valueLock.Unlock()
+		if cache.updateCond != nil && cache.updateCond.cond == nil {
+			cache.updateCond.updateAt = time.Now()
+		}
+
+		switch value := v.(type) {
+		case nil:
+			return
+		case error:
+			cache.onError(value)
+		default:
+			cache.value = v
+		}
+	}()
+
 }
 
 type updateCond struct {
