@@ -216,3 +216,31 @@ func TestForce(t *testing.T) {
 
 	wg.Wait()
 }
+
+func TestCaseErr(t *testing.T) {
+	var i = 0
+	cache := New(func() interface{} {
+		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
+		if err != nil {
+			log.Println(err)
+		}
+
+		i++
+		if i%2 == 0 {
+			return nil
+		}
+
+		// log.Println(string(resp.Content()))
+		return string(resp.Content())
+	})
+
+	cache.SetBlock(true)
+
+	for n := 0; n < 4; n++ {
+		cache.Update()
+		if v, ok := cache.Value().(string); !ok {
+			t.Error("value error", v)
+		}
+	}
+
+}
