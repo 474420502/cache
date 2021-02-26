@@ -172,9 +172,10 @@ func (cache *Cache) asyncUpdating() {
 
 	go func() {
 		defer atomic.StoreInt32(&cache.isUpdating, 0)
+
 		defer func() {
 			if err := recover(); err != nil {
-				log.Println("recover:", err)
+				cache.onError(err)
 			}
 		}()
 

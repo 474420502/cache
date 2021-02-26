@@ -244,3 +244,32 @@ func TestCaseErr(t *testing.T) {
 	}
 
 }
+
+func TestCasePanic(t *testing.T) {
+	var i = 0
+	cache := New(func() interface{} {
+		if i == 2 {
+			panic("error xixi")
+		}
+		i++
+
+		// log.Println(string(resp.Content()))
+		return "nono"
+	})
+
+	cache.SetOnError(func(err interface{}) {
+		if err.(string) != "error xixi" {
+			t.Error("panic test is error")
+		}
+	})
+
+	cache.SetBlock(true)
+
+	for n := 0; n < 4; n++ {
+		cache.Update()
+		if v, ok := cache.Value().(string); !ok {
+			t.Error("value error", v)
+		}
+	}
+
+}
