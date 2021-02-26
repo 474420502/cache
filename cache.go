@@ -82,6 +82,12 @@ func (cache *Cache) Update() {
 	cache.valueLock.Lock()
 	defer cache.valueLock.Unlock()
 
+	defer func() {
+		if err := recover(); err != nil {
+			cache.onError(err)
+		}
+	}()
+
 	if cache.first() {
 		return
 	}
