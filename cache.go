@@ -3,6 +3,7 @@ package cache
 
 import (
 	"log"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -196,6 +197,7 @@ func (cache *Cache) asyncUpdating() {
 		}
 	}()
 
+	runtime.Gosched() // 让出cpu 让异步执行
 }
 
 type updateCond struct {

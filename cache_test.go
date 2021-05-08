@@ -22,7 +22,6 @@ func TestCase1(t *testing.T) {
 			log.Println(err)
 		}
 
-		// log.Println(string(resp.Content()))
 		return string(resp.Content())
 	})
 
@@ -32,7 +31,7 @@ func TestCase1(t *testing.T) {
 	}
 
 	cache.SetUpdateInterval(
-		time.Millisecond * 500,
+		time.Millisecond * 50,
 	)
 
 	if old != cache.Value() {
@@ -40,7 +39,7 @@ func TestCase1(t *testing.T) {
 	}
 
 	for i := 0; i < 2; i++ {
-		time.Sleep(time.Millisecond * 700) //因为更细是异步虽然触发了更新. 异步更新不算时间
+		time.Sleep(time.Millisecond * 70) //因为更细是异步虽然触发了更新. 异步更新不算时间
 		n := cache.Value()
 		if old == n {
 			t.Error("value should be updated", n, old)
@@ -123,13 +122,13 @@ func TestBlockWithCond(t *testing.T) {
 	})
 
 	cache.SetBlock(true)
-	cache.SetUpdateInterval(time.Millisecond * 500)
+	cache.SetUpdateInterval(time.Millisecond * 50)
 	old := cache.Value()
 
-	for i := 0; i < 2; i++ {
-		time.Sleep(time.Millisecond * 500)
+	for i := 0; i < 1; i++ {
+		time.Sleep(time.Millisecond * 50)
 		if old == cache.Value() {
-			log.Println("old not equal new value")
+			t.Error("old should not equal new value")
 		}
 	}
 
@@ -197,13 +196,13 @@ func TestForce(t *testing.T) {
 			var old interface{} = cache.Value()
 			var count = 0
 			now := time.Now()
-			// log.Println(now)
+
 			for i := 0; i < 1000; i++ {
 				nvalue := cache.Value()
 				if old != nvalue {
 					old = nvalue
 					count++
-					// log.Println(old, count)
+
 				}
 				time.Sleep(time.Millisecond * 1)
 			}
@@ -253,7 +252,6 @@ func TestCasePanic(t *testing.T) {
 		}
 		i++
 
-		// log.Println(string(resp.Content()))
 		return "nono"
 	})
 
@@ -269,6 +267,36 @@ func TestCasePanic(t *testing.T) {
 		cache.Update()
 		if v, ok := cache.Value().(string); !ok {
 			t.Error("value error", v)
+		}
+	}
+
+}
+
+func TestCondUpdate(t *testing.T) {
+
+	cache := New(func() interface{} {
+		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
+		if err != nil {
+			log.Println(err)
+		}
+		return string(resp.Content())
+	})
+
+	ts := time.Now()
+	endts := ts.Add(time.Millisecond * 50)
+	cache.SetUpdateCond(func() bool {
+		return !ts.Before(endts)
+	})
+
+	cache.SetBlock(true) // 如果不设置阻塞, 第一次Value会因为网络不更新
+
+	old := cache.Value()
+
+	for i := 0; i < 1; i++ {
+		time.Sleep(time.Millisecond * 50)
+		ts = time.Now()
+		if old == cache.Value() {
+			t.Error("old should not equal new value")
 		}
 	}
 
