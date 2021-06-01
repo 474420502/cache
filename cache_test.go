@@ -1,10 +1,7 @@
 package cache
 
 import (
-	"fmt"
 	"log"
-	"math"
-	"sync"
 	"testing"
 	"time"
 
@@ -16,7 +13,7 @@ func init() {
 }
 
 func TestCase1(t *testing.T) {
-	cache := New(func() interface{} {
+	cache := New(time.Millisecond*50, func(share interface{}) interface{} {
 		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
 		if err != nil {
 			log.Println(err)
@@ -24,20 +21,9 @@ func TestCase1(t *testing.T) {
 
 		return string(resp.Content())
 	})
+	defer cache.Destroy()
 
 	old := cache.Value()
-	if old == nil {
-		t.Error("value is not nil")
-	}
-
-	cache.SetUpdateInterval(
-		time.Millisecond * 50,
-	)
-
-	if old != cache.Value() {
-		t.Error("cache Value error")
-	}
-
 	for i := 0; i < 2; i++ {
 		time.Sleep(time.Millisecond * 70) //因为更细是异步虽然触发了更新. 异步更新不算时间
 		n := cache.Value()
@@ -50,254 +36,260 @@ func TestCase1(t *testing.T) {
 }
 
 func TestCase2(t *testing.T) {
-	cache := New(func() interface{} {
+	cache := New(time.Millisecond*50, func(share interface{}) interface{} {
+		if share == nil {
+			log.Println("share is nil", share)
+			time.Sleep(time.Millisecond * 50)
+			return nil
+		}
+
+		if share != 1 {
+			t.Error("share is not 1")
+		}
+
 		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
 		if err != nil {
 			log.Println(err)
 		}
+
 		return string(resp.Content())
 	})
-	var i = 0
-	cache.SetUpdateCond(func() bool {
-		return i == 2
-	})
+	defer cache.Destroy()
 
+	cache.SetShare(1)
 	old := cache.Value()
-	for i = 0; i < 10; i++ {
-		time.Sleep(time.Millisecond * 10 * time.Duration(i))
-		n := cache.Value()
-		if old != n {
-			if i <= 2 {
-				t.Error("cond is error", i, old, n)
-			}
-			break
-		}
-
-		if i == 9 {
-			t.Error("cond is error")
-		}
+	if old != nil {
+		t.Error("old not nil")
 	}
-
 	time.Sleep(time.Millisecond * 100)
+	if cache.Value() == nil {
+		t.Error("uid get error")
+	}
 }
 
 func TestCaseBlock(t *testing.T) {
-	var isFirst bool = false
-	cache := New(func() interface{} {
+	cache := NewWithBlock(time.Duration(0), func(share interface{}) interface{} {
 		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
 		if err != nil {
 			log.Println(err)
 		}
 
-		if isFirst {
-			time.Sleep(time.Second)
-		}
-		isFirst = true
-
 		return string(resp.Content())
 	})
-
-	cache.SetBlock(true)
 	old := cache.Value()
-	now := time.Now()
-	for i := 0; i < 2; i++ {
-		cache.Update()
-		if old == cache.Value() {
-			t.Error("error")
-		}
-	}
-	if time.Since(now) <= time.Second*2 {
+	if old == cache.Value() {
 		t.Error("block is error")
 	}
 }
 
-func TestBlockWithCond(t *testing.T) {
-
-	cache := New(func() interface{} {
+func TestCase3(t *testing.T) {
+	cache := New(time.Second*2, func(share interface{}) interface{} {
 		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
 		if err != nil {
 			log.Println(err)
 		}
+
 		return string(resp.Content())
 	})
+	defer cache.Destroy()
 
-	cache.SetBlock(true)
-	cache.SetUpdateInterval(time.Millisecond * 50)
 	old := cache.Value()
-
-	for i := 0; i < 1; i++ {
-		time.Sleep(time.Millisecond * 50)
-		if old == cache.Value() {
-			t.Error("old should not equal new value")
-		}
+	cache.Update()
+	n := cache.Value()
+	if old == n {
+		t.Error("value should be updated", n, old)
 	}
 
 }
 
-func TestError(t *testing.T) {
-	cache := New(func() interface{} {
+func TestCase4(t *testing.T) {
+	cache := NewWithEvery(func(share interface{}) interface{} {
 		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
 		if err != nil {
 			log.Println(err)
 		}
 
-		panic("error")
-
 		return string(resp.Content())
 	})
+	defer cache.Destroy()
+
+	old := cache.Value()
+	cache.Update()
+	n := cache.Value()
+	if old == n {
+		t.Error("value should be updated", n, old)
+	}
+
+}
+
+// func TestBlockWithCond(t *testing.T) {
+
+// }
+
+func TestError(t *testing.T) {
+	cache := New(time.Millisecond*50, func(share interface{}) interface{} {
+		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
+		if err != nil {
+			log.Println(err)
+		}
+		panic("error")
+		return string(resp.Content())
+	})
+
 	var i = 0
-	cache.SetOnError(func(err interface{}) {
+	cache.SetOnUpdateError(func(err interface{}) {
 		i = 1
 	})
 
-	cache.Value()
+	time.Sleep(time.Millisecond * 50)
 
+	cache.Value()
 	if i != 1 {
 		t.Error("onError is error")
 	}
 }
 
-func TestUpdateReturnError(t *testing.T) {
-	cache := New(func() interface{} {
-		return fmt.Errorf("test errro")
-	})
+// func TestUpdateReturnError(t *testing.T) {
+// 	cache := New(func() interface{} {
+// 		return fmt.Errorf("test errro")
+// 	})
 
-	var i = 0
-	cache.SetOnError(func(err interface{}) {
-		i++
-		log.Println(i)
-	})
+// 	var i = 0
+// 	cache.SetOnError(func(err interface{}) {
+// 		i++
+// 		log.Println(i)
+// 	})
 
-	cache.Update() //第一次更新错误
-	cache.SetBlock(true)
-	cache.Value() // 第二次都认为需要更新
+// 	cache.Update() //第一次更新错误
+// 	cache.SetBlock(true)
+// 	cache.Value() // 第二次都认为需要更新
 
-	if i != 2 {
-		t.Error("SetOnError")
-	}
-}
+// 	if i != 2 {
+// 		t.Error("SetOnError")
+// 	}
+// }
 
-func TestForce(t *testing.T) {
-	wg := &sync.WaitGroup{}
-	cache := New(func() interface{} {
-		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
-		if err != nil {
-			log.Println(err)
-		}
-		return string(resp.Content())
-	})
+// func TestForce(t *testing.T) {
+// 	wg := &sync.WaitGroup{}
+// 	cache := New(func() interface{} {
+// 		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
+// 		if err != nil {
+// 			log.Println(err)
+// 		}
+// 		return string(resp.Content())
+// 	})
 
-	cache.SetUpdateInterval(time.Millisecond * 100)
+// 	cache.SetUpdateInterval(time.Millisecond * 100)
 
-	for i := 0; i < 1000; i++ {
-		go func() {
-			wg.Add(1)
-			defer wg.Done()
-			var old interface{} = cache.Value()
-			var count = 0
-			now := time.Now()
+// 	for i := 0; i < 1000; i++ {
+// 		go func() {
+// 			wg.Add(1)
+// 			defer wg.Done()
+// 			var old interface{} = cache.Value()
+// 			var count = 0
+// 			now := time.Now()
 
-			for i := 0; i < 1000; i++ {
-				nvalue := cache.Value()
-				if old != nvalue {
-					old = nvalue
-					count++
+// 			for i := 0; i < 1000; i++ {
+// 				nvalue := cache.Value()
+// 				if old != nvalue {
+// 					old = nvalue
+// 					count++
 
-				}
-				time.Sleep(time.Millisecond * 1)
-			}
-			predict := int(math.Round(float64(time.Since(now).Milliseconds()))) / 100
-			if !(predict >= count-1 || predict <= count+1) {
-				t.Error("error", predict, count)
-			}
-		}()
-	}
+// 				}
+// 				time.Sleep(time.Millisecond * 1)
+// 			}
+// 			predict := int(math.Round(float64(time.Since(now).Milliseconds()))) / 100
+// 			if !(predict >= count-1 || predict <= count+1) {
+// 				t.Error("error", predict, count)
+// 			}
+// 		}()
+// 	}
 
-	wg.Wait()
-}
+// 	wg.Wait()
+// }
 
-func TestCaseErr(t *testing.T) {
-	var i = 0
-	cache := New(func() interface{} {
-		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
-		if err != nil {
-			log.Println(err)
-		}
+// func TestCaseErr(t *testing.T) {
+// 	var i = 0
+// 	cache := New(func() interface{} {
+// 		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
+// 		if err != nil {
+// 			log.Println(err)
+// 		}
 
-		i++
-		if i%2 == 0 {
-			return nil
-		}
+// 		i++
+// 		if i%2 == 0 {
+// 			return nil
+// 		}
 
-		// log.Println(string(resp.Content()))
-		return string(resp.Content())
-	})
+// 		// log.Println(string(resp.Content()))
+// 		return string(resp.Content())
+// 	})
 
-	cache.SetBlock(true)
+// 	cache.SetBlock(true)
 
-	for n := 0; n < 4; n++ {
-		cache.Update()
-		if v, ok := cache.Value().(string); !ok {
-			t.Error("value error", v)
-		}
-	}
+// 	for n := 0; n < 4; n++ {
+// 		cache.Update()
+// 		if v, ok := cache.Value().(string); !ok {
+// 			t.Error("value error", v)
+// 		}
+// 	}
 
-}
+// }
 
-func TestCasePanic(t *testing.T) {
-	var i = 0
-	cache := New(func() interface{} {
-		if i == 2 {
-			panic("error xixi")
-		}
-		i++
+// func TestCasePanic(t *testing.T) {
+// 	var i = 0
+// 	cache := New(func() interface{} {
+// 		if i == 2 {
+// 			panic("error xixi")
+// 		}
+// 		i++
 
-		return "nono"
-	})
+// 		return "nono"
+// 	})
 
-	cache.SetOnError(func(err interface{}) {
-		if err.(string) != "error xixi" {
-			t.Error("panic test is error")
-		}
-	})
+// 	cache.SetOnError(func(err interface{}) {
+// 		if err.(string) != "error xixi" {
+// 			t.Error("panic test is error")
+// 		}
+// 	})
 
-	cache.SetBlock(true)
+// 	cache.SetBlock(true)
 
-	for n := 0; n < 4; n++ {
-		cache.Update()
-		if v, ok := cache.Value().(string); !ok {
-			t.Error("value error", v)
-		}
-	}
+// 	for n := 0; n < 4; n++ {
+// 		cache.Update()
+// 		if v, ok := cache.Value().(string); !ok {
+// 			t.Error("value error", v)
+// 		}
+// 	}
 
-}
+// }
 
-func TestCondUpdate(t *testing.T) {
+// func TestCondUpdate(t *testing.T) {
 
-	cache := New(func() interface{} {
-		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
-		if err != nil {
-			log.Println(err)
-		}
-		return string(resp.Content())
-	})
+// 	cache := New(func() interface{} {
+// 		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
+// 		if err != nil {
+// 			log.Println(err)
+// 		}
+// 		return string(resp.Content())
+// 	})
 
-	ts := time.Now()
-	endts := ts.Add(time.Millisecond * 50)
-	cache.SetUpdateCond(func() bool {
-		return !ts.Before(endts)
-	})
+// 	ts := time.Now()
+// 	endts := ts.Add(time.Millisecond * 50)
+// 	cache.SetUpdateCond(func() bool {
+// 		return !ts.Before(endts)
+// 	})
 
-	cache.SetBlock(true) // 如果不设置阻塞, 第一次Value会因为网络不更新
+// 	cache.SetBlock(true) // 如果不设置阻塞, 第一次Value会因为网络不更新
 
-	old := cache.Value()
+// 	old := cache.Value()
 
-	for i := 0; i < 1; i++ {
-		time.Sleep(time.Millisecond * 50)
-		ts = time.Now()
-		if old == cache.Value() {
-			t.Error("old should not equal new value")
-		}
-	}
+// 	for i := 0; i < 1; i++ {
+// 		time.Sleep(time.Millisecond * 50)
+// 		ts = time.Now()
+// 		if old == cache.Value() {
+// 			t.Error("old should not equal new value")
+// 		}
+// 	}
 
-}
+// }

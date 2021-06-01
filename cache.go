@@ -5,33 +5,69 @@ import (
 	"log"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
 // Cache 缓存
 type Cache struct {
-	updateCond *updateCond
+	share interface{}
 
-	isBlock bool
+	isBlock   bool
+	isDestroy bool
 
-	isUpdating   int32
 	updateMehtod UpdateMehtod
-	onError      func(err interface{})
 
-	valueLock sync.Mutex
-	value     interface{}
+	onUpdateError func(err interface{})
+
+	LastUpdate time.Time
+	interval   time.Duration
+
+	vLock sync.Mutex
+	value interface{}
 }
 
 // UpdateMehtod 更新方法
-type UpdateMehtod func() interface{}
+type UpdateMehtod func(share interface{}) interface{}
 
 // New 创建一个Cache对象
-func New(u UpdateMehtod) *Cache {
+func New(interval time.Duration, u UpdateMehtod) *Cache {
+
+	c := &Cache{
+
+		updateMehtod: u,
+		onUpdateError: func(err interface{}) {
+			log.Println(err)
+		},
+	}
+
+	go func() {
+
+		for {
+
+			c.vLock.Lock()
+			c.update()
+			if c.isDestroy {
+				c.vLock.Unlock()
+				break
+			} else {
+				c.vLock.Unlock()
+			}
+
+			time.Sleep(c.interval)
+		}
+	}()
+
+	runtime.Gosched()
+	return c
+}
+
+// New 创建一个Cache对象, 异步更新必须调用Destroy 销毁
+func NewWithBlock(interval time.Duration, u UpdateMehtod) *Cache {
 	c := &Cache{
 		updateMehtod: u,
-		isBlock:      false,
-		onError: func(err interface{}) {
+		isBlock:      true,
+		interval:     interval,
+		onUpdateError: func(err interface{}) {
 			log.Println(err)
 		},
 	}
@@ -39,169 +75,77 @@ func New(u UpdateMehtod) *Cache {
 	return c
 }
 
-// SetOnError 默认false
-func (cache *Cache) SetOnError(errFunc func(err interface{})) {
-	cache.valueLock.Lock()
-	defer cache.valueLock.Unlock()
-	cache.onError = errFunc
-}
-
-// SetUpdateMethod 设置cache更新方法
-func (cache *Cache) SetUpdateMethod(method UpdateMehtod) {
-	cache.valueLock.Lock()
-	defer cache.valueLock.Unlock()
-	cache.updateMehtod = method
-}
-
-// SetUpdateCond 设置cache更新的条件. 时间间隔更新失效
-func (cache *Cache) SetUpdateCond(method func() bool) {
-	cache.valueLock.Lock()
-	defer cache.valueLock.Unlock()
-	cache.updateCond = &updateCond{
-		cond: method,
+// NewWithEvery 创建一个Cache对象. 必须每次都触发UpdateMethod可以自定以条件
+func NewWithEvery(u UpdateMehtod) *Cache {
+	c := &Cache{
+		updateMehtod: u,
+		isBlock:      true,
+		onUpdateError: func(err interface{}) {
+			log.Println(err)
+		},
 	}
+
+	return c
 }
 
-// SetUpdateInterval 设置cache更新的条件. 时间间隔更新. SetUpdateCond会失效. Cond也能完成所有更新方式
-func (cache *Cache) SetUpdateInterval(interval time.Duration) {
-	cache.valueLock.Lock()
-	defer cache.valueLock.Unlock()
-	cache.updateCond = &updateCond{
-		interval: interval,
+func (cache *Cache) SetShare(share interface{}) {
+	cache.vLock.Lock()
+	defer cache.vLock.Unlock()
+	cache.share = share
+}
+
+// SetOnUpdateError 默认false
+func (cache *Cache) SetOnUpdateError(errFunc func(err interface{})) {
+	cache.vLock.Lock()
+	defer cache.vLock.Unlock()
+	cache.onUpdateError = errFunc
+}
+
+// Destroy 异步更新必须调用Destroy, 销毁对象
+func (cache *Cache) Destroy() {
+	cache.vLock.Lock()
+	defer cache.vLock.Unlock()
+	cache.isBlock = true
+}
+
+// update 主动更新 没锁
+func (cache *Cache) update() {
+
+	defer func() {
+		cache.LastUpdate = time.Now()
+		if err := recover(); err != nil {
+			cache.onUpdateError(err)
+		}
+	}()
+
+	value := cache.updateMehtod(cache.share)
+	if value == nil {
+		return
 	}
-}
 
-// SetBlock 默认false
-func (cache *Cache) SetBlock(is bool) {
-	cache.valueLock.Lock()
-	defer cache.valueLock.Unlock()
-	cache.isBlock = is
+	if err, ok := value.(error); ok {
+		cache.onUpdateError(err)
+		return
+	}
+
+	cache.value = value
 }
 
 // Update 主动更新
 func (cache *Cache) Update() {
-	cache.valueLock.Lock()
-	defer cache.valueLock.Unlock()
-
-	defer func() {
-		if err := recover(); err != nil {
-			cache.onError(err)
-		}
-	}()
-
-	if cache.first() {
-		return
-	}
-
-	if cache.isBlock {
-		v := cache.updateMehtod()
-		if cache.updateCond != nil && cache.updateCond.cond == nil {
-			cache.updateCond.updateAt = time.Now()
-		}
-
-		switch value := v.(type) {
-		case nil:
-		case error:
-			cache.onError(value)
-		default:
-			cache.value = v
-		}
-		return
-	}
-
-	// 非block
-	if atomic.CompareAndSwapInt32(&cache.isUpdating, 0, 1) {
-		switch {
-		case cache.updateCond.cond != nil:
-			if cache.updateCond.cond() {
-				cache.asyncUpdating()
-				return
-			}
-		case time.Since(cache.updateCond.updateAt) >= cache.updateCond.interval:
-			cache.asyncUpdating()
-			return
-		default:
-		}
-
-		atomic.StoreInt32(&cache.isUpdating, 0)
-	}
+	cache.vLock.Lock()
+	defer cache.vLock.Unlock()
+	cache.update()
 }
 
 // Value 获取缓存的值
 func (cache *Cache) Value() interface{} {
+	cache.vLock.Lock()
+	defer cache.vLock.Unlock()
 
-	defer func() {
-		if err := recover(); err != nil {
-			cache.onError(err)
-		}
-	}()
-
-	// 如果有更新条件进入更新条件
-	if cache.updateCond != nil {
-		cache.Update()
-		return cache.value
+	if cache.isBlock && time.Since(cache.LastUpdate) >= cache.interval {
+		cache.update()
 	}
 
-	cache.valueLock.Lock()
-	defer cache.valueLock.Unlock()
-
-	// 第一次更新
-	cache.first()
 	return cache.value
-}
-
-func (cache *Cache) first() bool {
-	if cache.value == nil {
-		v := cache.updateMehtod()
-		if cache.updateCond != nil && cache.updateCond.cond == nil {
-			cache.updateCond.updateAt = time.Now()
-		}
-		switch value := v.(type) {
-		case nil:
-
-		case error:
-			cache.onError(value)
-		default:
-			cache.value = v
-		}
-		return true
-	}
-	return false
-}
-
-func (cache *Cache) asyncUpdating() {
-
-	go func() {
-		defer atomic.StoreInt32(&cache.isUpdating, 0)
-
-		defer func() {
-			if err := recover(); err != nil {
-				cache.onError(err)
-			}
-		}()
-
-		v := cache.updateMehtod()
-		cache.valueLock.Lock()
-		defer cache.valueLock.Unlock()
-		if cache.updateCond != nil && cache.updateCond.cond == nil {
-			cache.updateCond.updateAt = time.Now()
-		}
-
-		switch value := v.(type) {
-		case nil:
-			return
-		case error:
-			cache.onError(value)
-		default:
-			cache.value = v
-		}
-	}()
-
-	runtime.Gosched() // 让出cpu 让异步执行
-}
-
-type updateCond struct {
-	cond     func() bool
-	updateAt time.Time
-	interval time.Duration
 }
