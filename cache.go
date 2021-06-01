@@ -5,15 +5,16 @@ import (
 	"log"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 // Cache 缓存
 type Cache struct {
+	slock sync.Mutex
 	share interface{}
 
-	isBlock   bool
-	isDestroy bool
+	isDestroy int32
 
 	updateMehtod UpdateMehtod
 
@@ -33,27 +34,21 @@ type UpdateMehtod func(share interface{}) interface{}
 func New(interval time.Duration, u UpdateMehtod) *Cache {
 
 	c := &Cache{
-
 		updateMehtod: u,
+		interval:     interval,
 		onUpdateError: func(err interface{}) {
 			log.Println(err)
 		},
 	}
 
+	c.update()
 	go func() {
-
 		for {
-
-			c.vLock.Lock()
-			c.update()
-			if c.isDestroy {
-				c.vLock.Unlock()
-				break
-			} else {
-				c.vLock.Unlock()
-			}
-
 			time.Sleep(c.interval)
+			if atomic.LoadInt32(&c.isDestroy) == 1 {
+				break
+			}
+			c.update()
 		}
 	}()
 
@@ -61,55 +56,28 @@ func New(interval time.Duration, u UpdateMehtod) *Cache {
 	return c
 }
 
-// New 创建一个Cache对象, 异步更新必须调用Destroy 销毁
-func NewWithBlock(interval time.Duration, u UpdateMehtod) *Cache {
-	c := &Cache{
-		updateMehtod: u,
-		isBlock:      true,
-		interval:     interval,
-		onUpdateError: func(err interface{}) {
-			log.Println(err)
-		},
-	}
-
-	return c
-}
-
-// NewWithEvery 创建一个Cache对象. 必须每次都触发UpdateMethod可以自定以条件
-func NewWithEvery(u UpdateMehtod) *Cache {
-	c := &Cache{
-		updateMehtod: u,
-		isBlock:      true,
-		onUpdateError: func(err interface{}) {
-			log.Println(err)
-		},
-	}
-
-	return c
-}
-
 func (cache *Cache) SetShare(share interface{}) {
-	cache.vLock.Lock()
-	defer cache.vLock.Unlock()
+	cache.slock.Lock()
+	defer cache.slock.Unlock()
 	cache.share = share
 }
 
 // SetOnUpdateError 默认false
 func (cache *Cache) SetOnUpdateError(errFunc func(err interface{})) {
-	cache.vLock.Lock()
-	defer cache.vLock.Unlock()
+	cache.slock.Lock()
+	defer cache.slock.Unlock()
 	cache.onUpdateError = errFunc
 }
 
 // Destroy 异步更新必须调用Destroy, 销毁对象
 func (cache *Cache) Destroy() {
-	cache.vLock.Lock()
-	defer cache.vLock.Unlock()
-	cache.isBlock = true
+	atomic.StoreInt32(&cache.isDestroy, 1)
 }
 
 // update 主动更新 没锁
 func (cache *Cache) update() {
+	cache.slock.Lock()
+	defer cache.slock.Unlock()
 
 	defer func() {
 		cache.LastUpdate = time.Now()
@@ -118,34 +86,27 @@ func (cache *Cache) update() {
 		}
 	}()
 
-	value := cache.updateMehtod(cache.share)
-	if value == nil {
-		return
-	}
+	func() {
+		value := cache.updateMehtod(cache.share)
+		if value == nil {
+			return
+		}
 
-	if err, ok := value.(error); ok {
-		cache.onUpdateError(err)
-		return
-	}
+		if err, ok := value.(error); ok {
+			cache.onUpdateError(err)
+			return
+		}
 
-	cache.value = value
-}
+		cache.vLock.Lock()
+		cache.value = value
+		cache.vLock.Unlock()
+	}()
 
-// Update 主动更新
-func (cache *Cache) Update() {
-	cache.vLock.Lock()
-	defer cache.vLock.Unlock()
-	cache.update()
 }
 
 // Value 获取缓存的值
 func (cache *Cache) Value() interface{} {
 	cache.vLock.Lock()
 	defer cache.vLock.Unlock()
-
-	if cache.isBlock && time.Since(cache.LastUpdate) >= cache.interval {
-		cache.update()
-	}
-
 	return cache.value
 }
