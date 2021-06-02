@@ -9,12 +9,8 @@ import (
 	"github.com/474420502/gcurl"
 )
 
-func init() {
-	log.Println("docker run -p 80:80 kennethreitz/httpbin. and change /etc/host 127.0.0.1 httpbin.org")
-}
-
-func TestCase1(t *testing.T) {
-	cache := New(time.Millisecond*50, func(share interface{}) interface{} {
+func TestBlockCase1(t *testing.T) {
+	cache := NewBlockCache(time.Millisecond*50, func(share interface{}) interface{} {
 		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
 		if err != nil {
 			log.Println(err)
@@ -36,10 +32,10 @@ func TestCase1(t *testing.T) {
 
 }
 
-func TestCase2(t *testing.T) {
-	cache := New(time.Millisecond*50, func(share interface{}) interface{} {
+func TestBlockCase2(t *testing.T) {
+	cache := NewBlockCache(time.Millisecond*50, func(share interface{}) interface{} {
 		if share == nil {
-			log.Println("share is nil", share)
+			// log.Println("share is nil", share)
 			time.Sleep(time.Millisecond * 50)
 			return nil
 		}
@@ -55,9 +51,11 @@ func TestCase2(t *testing.T) {
 
 		return string(resp.Content())
 	})
-	defer cache.Destroy()
+
+	cache.Value()
 
 	cache.SetShare(1)
+
 	old := cache.Value()
 	if old != nil {
 		t.Error("old not nil")
@@ -68,12 +66,12 @@ func TestCase2(t *testing.T) {
 	}
 }
 
-// func TestBlockWithCond(t *testing.T) {
+// func TestBlockBlockWithCond(t *testing.T) {
 
 // }
 
-func TestError(t *testing.T) {
-	cache := New(time.Millisecond*50, func(share interface{}) interface{} {
+func TestBlockError(t *testing.T) {
+	cache := NewBlockCache(time.Millisecond*50, func(share interface{}) interface{} {
 		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
 		if err != nil {
 			log.Println(err)
@@ -95,7 +93,7 @@ func TestError(t *testing.T) {
 	}
 }
 
-func TestMulti(t *testing.T) {
+func TestBlockMulti(t *testing.T) {
 
 	defer func() {
 		if err := recover(); err != nil {
@@ -105,7 +103,7 @@ func TestMulti(t *testing.T) {
 
 	var i = 0
 
-	cache := New(time.Millisecond*50, func(share interface{}) interface{} {
+	cache := NewBlockCache(time.Millisecond*50, func(share interface{}) interface{} {
 		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
 		if err != nil {
 			log.Println(err)
@@ -121,18 +119,68 @@ func TestMulti(t *testing.T) {
 		i = 1
 	})
 	wg := &sync.WaitGroup{}
-	for n := 0; n < 100; n++ {
+	for n := 0; n < 50; n++ {
 		wg.Add(1)
 		go func(wg *sync.WaitGroup) {
 			defer wg.Done()
-			for x := 0; x < 400; x++ {
+			for x := 0; x < 100; x++ {
 				cache.Value()
 				cache.GetUpdate()
-				log.Println(cache.Value(), cache.GetUpdate())
+
 				time.Sleep(time.Millisecond)
 			}
 		}(wg)
 	}
 
 	wg.Wait()
+}
+
+func TestBlockTime(t *testing.T) {
+
+	defer func() {
+		if err := recover(); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	var i = 0
+
+	cache := NewBlockCache(time.Millisecond*1, func(share interface{}) interface{} {
+		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
+		if err != nil {
+			log.Println(err)
+		}
+		i++
+		if i%10 == 0 {
+			panic("error")
+		}
+		time.Sleep(time.Millisecond * 10)
+		return string(resp.Content())
+	})
+
+	cache.SetOnUpdateError(func(err interface{}) {
+		i = 1
+	})
+
+	now := time.Now()
+
+	wg := &sync.WaitGroup{}
+	for n := 0; n < 10; n++ {
+		wg.Add(1)
+		go func(wg *sync.WaitGroup) {
+			defer wg.Done()
+			for x := 0; x < 20; x++ {
+				cache.Value()
+				cache.GetUpdate()
+				time.Sleep(time.Millisecond)
+			}
+		}(wg)
+	}
+
+	wg.Wait()
+
+	if time.Since(now) <= time.Millisecond*200 {
+		t.Error("block time is error", time.Since(now))
+	}
+
 }
