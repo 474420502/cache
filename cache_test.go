@@ -2,6 +2,7 @@ package cache
 
 import (
 	"log"
+	"sync"
 	"testing"
 	"time"
 
@@ -92,4 +93,46 @@ func TestError(t *testing.T) {
 	if i != 1 {
 		t.Error("onError is error")
 	}
+}
+
+func TestMulti(t *testing.T) {
+
+	defer func() {
+		if err := recover(); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	var i = 0
+
+	cache := New(time.Millisecond*50, func(share interface{}) interface{} {
+		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
+		if err != nil {
+			log.Println(err)
+		}
+		i++
+		if i%10 == 0 {
+			panic("error")
+		}
+		return string(resp.Content())
+	})
+
+	cache.SetOnUpdateError(func(err interface{}) {
+		i = 1
+	})
+	wg := &sync.WaitGroup{}
+	for n := 0; n < 100; n++ {
+		wg.Add(1)
+		go func(wg *sync.WaitGroup) {
+			defer wg.Done()
+			for x := 0; x < 400; x++ {
+				cache.Value()
+				cache.GetUpdate()
+				log.Println(cache.Value(), cache.GetUpdate())
+				time.Sleep(time.Millisecond)
+			}
+		}(wg)
+	}
+
+	wg.Wait()
 }

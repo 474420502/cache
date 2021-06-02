@@ -20,7 +20,7 @@ type Cache struct {
 
 	onUpdateError func(err interface{})
 
-	LastUpdate time.Time
+	lastUpdate time.Time
 	interval   time.Duration
 
 	vLock sync.Mutex
@@ -80,13 +80,14 @@ func (cache *Cache) update() {
 	defer cache.slock.Unlock()
 
 	defer func() {
-		cache.LastUpdate = time.Now()
+		cache.lastUpdate = time.Now()
 		if err := recover(); err != nil {
 			cache.onUpdateError(err)
 		}
 	}()
 
 	func() {
+
 		value := cache.updateMehtod(cache.share)
 		if value == nil {
 			return
@@ -101,7 +102,6 @@ func (cache *Cache) update() {
 		cache.value = value
 		cache.vLock.Unlock()
 	}()
-
 }
 
 // Value 获取缓存的值
@@ -109,4 +109,11 @@ func (cache *Cache) Value() interface{} {
 	cache.vLock.Lock()
 	defer cache.vLock.Unlock()
 	return cache.value
+}
+
+// Value 获取缓存的值
+func (cache *Cache) GetUpdate() time.Time {
+	cache.slock.Lock()
+	defer cache.slock.Unlock()
+	return cache.lastUpdate
 }
