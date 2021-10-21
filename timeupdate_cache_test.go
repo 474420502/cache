@@ -32,6 +32,10 @@ func TestCase1(t *testing.T) {
 			t.Error("value should be updated", n, old)
 		}
 		old = cache.Value()
+		old = cache.Value()
+		if old != n {
+			t.Error("value should be updated", n, old)
+		}
 	}
 
 }

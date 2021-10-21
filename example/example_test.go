@@ -1,18 +1,15 @@
-## Cache 
-用于定时或者条件更新数据. 例如: 1.爬虫请求页面时间或者某个值 2.请求某表的内容信息, 减少频繁操作
+package example
 
-## 使用方法
-
-```golang
 import (
 	"log"
+	"testing"
 	"time"
 
 	"github.com/474420502/cache"
 	"github.com/474420502/gcurl"
 )
 
-func main() {
+func TestCacheTimeInterval(t *testing.T) {
 	// 实例
 	cache := cache.New(
 		time.Millisecond*50, // 每 50 millisecond 更新一次
@@ -21,6 +18,7 @@ func main() {
 			if err != nil {
 				log.Println(err)
 			}
+
 			return string(resp.Content()) // 返回更新的时间. 这个数据会在不更新期间缓存
 		})
 	defer cache.Destroy()
@@ -41,5 +39,3 @@ func main() {
 	// 初始化后只需要获取
 	log.Println(cache.Value()) // 该值为 cache.UpdateMehtod 的值. 可用于缓存 一些远程更新数据 但是不需要频繁更新.
 }
-
-```

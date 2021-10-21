@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// CacheBlock 缓存
+// CacheBlock 缓存 对比 默认 CacheInterval 的. 该方法有阻塞效果. 就是更新过程会阻塞
 type CacheBlock struct {
 	share interface{}
 
