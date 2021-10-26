@@ -30,17 +30,16 @@ func New(interval time.Duration, u UpdateMehtod) Cache {
 		},
 	}
 
-	c.update()
 	go func() {
+		runtime.Gosched()
 		for {
-			time.Sleep(c.interval)
 			if atomic.LoadInt32(&c.isDestroy) == 1 {
 				break
 			}
 			c.update()
+			time.Sleep(c.interval)
 		}
 	}()
 
-	runtime.Gosched()
 	return c
 }
