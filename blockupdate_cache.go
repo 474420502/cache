@@ -45,11 +45,6 @@ func (cache *CacheBlock) SetOnUpdateError(errFunc func(err interface{})) {
 	cache.onUpdateError = errFunc
 }
 
-// Destroy 异步更新必须调用Destroy, 销毁对象
-func (cache *CacheBlock) Destroy() {
-
-}
-
 // update 主动更新 没锁全阻塞
 func (cache *CacheBlock) update() {
 
