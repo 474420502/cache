@@ -21,17 +21,14 @@ type CacheBlock struct {
 }
 
 // NewBlockCache 创建一个Cache对象
-func NewBlockCache(interval time.Duration, u UpdateMehtod) Cache {
-
+func NewBlockCache(interval time.Duration, updateMethod UpdateMehtod) Cache {
 	c := &CacheBlock{
-		updateMehtod: u,
+		updateMehtod: updateMethod,
 		interval:     interval,
 		onUpdateError: func(err interface{}) {
 			log.Println(err)
 		},
 	}
-
-	// c.update()
 	return c
 }
 
@@ -53,7 +50,7 @@ func (cache *CacheBlock) Destroy() {
 
 }
 
-// update 主动更新 没锁
+// update 主动更新 没锁全阻塞
 func (cache *CacheBlock) update() {
 
 	defer func() {
@@ -87,6 +84,13 @@ func (cache *CacheBlock) Value() interface{} {
 	}
 
 	return cache.value
+}
+
+// ForceUpdate 强制更新
+func (cache *CacheBlock) ForceUpdate() {
+	cache.vLock.Lock()
+	defer cache.vLock.Unlock()
+	cache.update()
 }
 
 // Value 获取缓存的值

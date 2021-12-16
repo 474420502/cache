@@ -18,7 +18,6 @@ func TestBlockCase1(t *testing.T) {
 
 		return string(resp.Content())
 	})
-	defer cache.Destroy()
 
 	old := cache.Value()
 	for i := 0; i < 2; i++ {
@@ -181,6 +180,29 @@ func TestBlockTime(t *testing.T) {
 
 	if time.Since(now) <= time.Millisecond*200 {
 		t.Error("block time is error", time.Since(now))
+	}
+
+}
+
+func TestBlockForceUpdate(t *testing.T) {
+	cache := NewBlockCache(time.Millisecond*50, func(share interface{}) interface{} {
+		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
+		if err != nil {
+			log.Println(err)
+		}
+		return string(resp.Content())
+	})
+
+	var result string = cache.Value().(string)
+
+	for i := 0; i < 3; i++ {
+		// time.Sleep(time.Millisecond * 30)
+		cache.ForceUpdate()
+		cvalue := cache.Value().(string)
+		if result == cvalue {
+			t.Error(result, cvalue)
+		}
+		result = cvalue
 	}
 
 }

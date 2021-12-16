@@ -2,6 +2,7 @@ package cache
 
 import (
 	"log"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -10,7 +11,7 @@ import (
 )
 
 func init() {
-	log.Println("docker run -p 80:80 kennethreitz/httpbin. and change /etc/host 127.0.0.1 httpbin.org")
+	log.Println("docker run -p 80:80 kennethreitz/httpbin. and set /etc/host 127.0.0.1 httpbin.org")
 }
 
 func TestCase1(t *testing.T) {
@@ -22,7 +23,6 @@ func TestCase1(t *testing.T) {
 
 		return string(resp.Content())
 	})
-	defer cache.Destroy()
 
 	old := cache.Value()
 	for i := 0; i < 2; i++ {
@@ -59,7 +59,6 @@ func TestCase2(t *testing.T) {
 
 		return string(resp.Content())
 	})
-	defer cache.Destroy()
 
 	cache.SetShare(1)
 	old := cache.Value()
@@ -132,7 +131,6 @@ func TestMulti(t *testing.T) {
 			for x := 0; x < 400; x++ {
 				cache.Value()
 				cache.GetUpdate()
-
 				time.Sleep(time.Millisecond)
 			}
 		}(wg)
@@ -140,3 +138,67 @@ func TestMulti(t *testing.T) {
 
 	wg.Wait()
 }
+
+func TestRuntimeCleanCache(t *testing.T) {
+	func() {
+
+		cache := New(time.Millisecond*50, func(share interface{}) interface{} {
+			resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
+			if err != nil {
+				log.Println(err)
+			}
+			return string(resp.Content())
+		})
+
+		var result string = cache.Value().(string)
+		for i := 0; i < 3; i++ {
+			cvalue := cache.Value().(string)
+			if result != cvalue {
+				t.Error(result, cvalue)
+			}
+		}
+
+		for i := 0; i < 3; i++ {
+			// time.Sleep(time.Millisecond * 30)
+			cache.ForceUpdate()
+			cvalue := cache.Value().(string)
+			if result == cvalue {
+				t.Error(result, cvalue)
+			}
+			result = cvalue
+		}
+
+	}()
+
+	runtime.GC()
+	time.Sleep(time.Second * 2)
+}
+
+func TestForceUpdate(t *testing.T) {
+
+}
+
+// func TestShareProblem(t *testing.T) {
+// 	wg := &sync.WaitGroup{}
+// 	for i := 0; i < 10000000; i++ {
+// 		wg.Add(1)
+// 		go func(wg *sync.WaitGroup) {
+// 			defer wg.Done()
+// 			c := createShareCache()
+// 			if c.Value() == nil {
+// 				return
+// 			}
+// 		}(wg)
+// 	}
+
+// 	wg.Wait()
+// }
+
+// func createShareCache() Cache {
+// 	cache := New(time.Second, func(share interface{}) interface{} {
+// 		s := share.(string)
+// 		return s
+// 	})
+// 	cache.SetShare("1")
+// 	return cache
+// }

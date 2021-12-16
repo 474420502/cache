@@ -2,48 +2,48 @@ package cache
 
 import (
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
-// CacheInterval 缓存
-type CacheInterval struct {
+// cacheIntervalBackup 缓存
+type cacheIntervalBackup struct {
 	slock sync.Mutex
 	share interface{}
 
-	isDestroy int32
+	isDestroy     chan struct{} // 是否退出持续更新
+	isForceUpdate chan struct{} // 是否强制更新 无视时间间隔
 
 	updateMehtod UpdateMehtod
 
 	onUpdateError func(err interface{})
 
 	lastUpdate time.Time
-	interval   time.Duration
+	interval   *time.Ticker
 
 	vLock sync.Mutex
 	value interface{}
 }
 
-func (cache *CacheInterval) SetShare(share interface{}) {
+func (cache *cacheIntervalBackup) SetShare(share interface{}) {
 	cache.slock.Lock()
 	defer cache.slock.Unlock()
 	cache.share = share
 }
 
 // SetOnUpdateError 默认false
-func (cache *CacheInterval) SetOnUpdateError(errFunc func(err interface{})) {
+func (cache *cacheIntervalBackup) SetOnUpdateError(errFunc func(err interface{})) {
 	cache.slock.Lock()
 	defer cache.slock.Unlock()
 	cache.onUpdateError = errFunc
 }
 
 // Destroy 异步更新必须调用Destroy, 销毁对象
-func (cache *CacheInterval) Destroy() {
-	atomic.StoreInt32(&cache.isDestroy, 1)
+func (cache *cacheIntervalBackup) Destroy() {
+	cache.isDestroy <- struct{}{}
 }
 
 // update 主动更新 没锁
-func (cache *CacheInterval) update() {
+func (cache *cacheIntervalBackup) update() {
 	cache.slock.Lock()
 	defer cache.slock.Unlock()
 
@@ -55,12 +55,10 @@ func (cache *CacheInterval) update() {
 	}()
 
 	func() {
-
 		value := cache.updateMehtod(cache.share)
 		if value == nil {
 			return
 		}
-
 		if err, ok := value.(error); ok {
 			cache.onUpdateError(err)
 			return
@@ -73,14 +71,20 @@ func (cache *CacheInterval) update() {
 }
 
 // Value 获取缓存的值
-func (cache *CacheInterval) Value() interface{} {
+func (cache *cacheIntervalBackup) Value() interface{} {
 	cache.vLock.Lock()
 	defer cache.vLock.Unlock()
 	return cache.value
 }
 
 // Value 获取缓存的值
-func (cache *CacheInterval) GetUpdate() time.Time {
+func (cache *cacheIntervalBackup) ForceUpdate() {
+	cache.isForceUpdate <- struct{}{}
+	<-cache.isForceUpdate
+}
+
+// Value 获取缓存的值
+func (cache *cacheIntervalBackup) GetUpdate() time.Time {
 	cache.slock.Lock()
 	defer cache.slock.Unlock()
 	return cache.lastUpdate

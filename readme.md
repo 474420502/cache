@@ -23,7 +23,6 @@ func main() {
 			}
 			return string(resp.Content()) // 返回更新的时间. 这个数据会在不更新期间缓存
 		})
-	defer cache.Destroy()
 
 	old := cache.Value() // 旧值
 	for i := 0; i < 2; i++ {
