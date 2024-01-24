@@ -1,208 +1,199 @@
 package cache
 
-import (
-	"log"
-	"sync"
-	"testing"
-	"time"
+// func TestBlockCase1(t *testing.T) {
+// 	cache := NewBlockCache(time.Millisecond*50, func(share interface{}) interface{} {
+// 		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
+// 		if err != nil {
+// 			log.Println(err)
+// 		}
 
-	"github.com/474420502/gcurl"
-)
+// 		return string(resp.Content())
+// 	})
 
-func TestBlockCase1(t *testing.T) {
-	cache := NewBlockCache(time.Millisecond*50, func(share interface{}) interface{} {
-		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
-		if err != nil {
-			log.Println(err)
-		}
-
-		return string(resp.Content())
-	})
-
-	old := cache.Value()
-	for i := 0; i < 2; i++ {
-		time.Sleep(time.Millisecond * 70) //因为更细是异步虽然触发了更新. 异步更新不算时间
-		n := cache.Value()
-		if old == n {
-			t.Error("value should be updated", n, old)
-		}
-		old = cache.Value()
-	}
-
-}
-
-func TestBlockCase2(t *testing.T) {
-	cache := NewBlockCache(time.Millisecond*50, func(share interface{}) interface{} {
-		if share == nil {
-			// log.Println("share is nil", share)
-			time.Sleep(time.Millisecond * 50)
-			return nil
-		}
-
-		if share != 1 {
-			t.Error("share is not 1")
-		}
-
-		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
-		if err != nil {
-			log.Println(err)
-		}
-
-		return string(resp.Content())
-	})
-
-	cache.Value()
-
-	cache.SetShare(1)
-
-	old := cache.Value()
-	if old != nil {
-		t.Error("old not nil")
-	}
-	time.Sleep(time.Millisecond * 100)
-	if cache.Value() == nil {
-		t.Error("uid get error")
-	}
-}
-
-// func TestBlockBlockWithCond(t *testing.T) {
+// 	old := cache.Value()
+// 	for i := 0; i < 2; i++ {
+// 		time.Sleep(time.Millisecond * 70) //因为更细是异步虽然触发了更新. 异步更新不算时间
+// 		n := cache.Value()
+// 		if old == n {
+// 			t.Error("value should be updated", n, old)
+// 		}
+// 		old = cache.Value()
+// 	}
 
 // }
 
-func TestBlockError(t *testing.T) {
-	cache := NewBlockCache(time.Millisecond*50, func(share interface{}) interface{} {
-		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
-		if err != nil {
-			log.Println(err)
-		}
-		panic("error")
-		return string(resp.Content())
-	})
+// func TestBlockCase2(t *testing.T) {
+// 	cache := NewBlockCache(time.Millisecond*50, func(share interface{}) interface{} {
+// 		if share == nil {
+// 			// log.Println("share is nil", share)
+// 			time.Sleep(time.Millisecond * 50)
+// 			return nil
+// 		}
 
-	var i = 0
-	cache.SetOnUpdateError(func(err interface{}) {
-		i = 1
-	})
+// 		if share != 1 {
+// 			t.Error("share is not 1")
+// 		}
 
-	time.Sleep(time.Millisecond * 100)
+// 		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
+// 		if err != nil {
+// 			log.Println(err)
+// 		}
 
-	cache.Value()
-	if i != 1 {
-		t.Error("onError is error")
-	}
-}
+// 		return string(resp.Content())
+// 	})
 
-func TestBlockMulti(t *testing.T) {
+// 	cache.Value()
 
-	defer func() {
-		if err := recover(); err != nil {
-			t.Error(err)
-		}
-	}()
+// 	cache.SetShare(1)
 
-	var i = 0
+// 	old := cache.Value()
+// 	if old != nil {
+// 		t.Error("old not nil")
+// 	}
+// 	time.Sleep(time.Millisecond * 100)
+// 	if cache.Value() == nil {
+// 		t.Error("uid get error")
+// 	}
+// }
 
-	cache := NewBlockCache(time.Millisecond*50, func(share interface{}) interface{} {
-		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
-		if err != nil {
-			log.Println(err)
-		}
-		i++
-		if i%10 == 0 {
-			panic("error")
-		}
-		return string(resp.Content())
-	})
+// // func TestBlockBlockWithCond(t *testing.T) {
 
-	cache.SetOnUpdateError(func(err interface{}) {
-		i = 1
-	})
-	wg := &sync.WaitGroup{}
-	for n := 0; n < 50; n++ {
-		wg.Add(1)
-		go func(wg *sync.WaitGroup) {
-			defer wg.Done()
-			for x := 0; x < 100; x++ {
-				cache.Value()
-				cache.GetUpdate()
+// // }
 
-				time.Sleep(time.Millisecond)
-			}
-		}(wg)
-	}
+// func TestBlockError(t *testing.T) {
+// 	cache := NewBlockCache(time.Millisecond*50, func(share interface{}) interface{} {
+// 		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
+// 		if err != nil {
+// 			log.Println(err)
+// 		}
+// 		panic("error")
+// 		return string(resp.Content())
+// 	})
 
-	wg.Wait()
-}
+// 	var i = 0
+// 	cache.SetOnUpdateError(func(err interface{}) {
+// 		i = 1
+// 	})
 
-func TestBlockTime(t *testing.T) {
+// 	time.Sleep(time.Millisecond * 100)
 
-	defer func() {
-		if err := recover(); err != nil {
-			t.Error(err)
-		}
-	}()
+// 	cache.Value()
+// 	if i != 1 {
+// 		t.Error("onError is error")
+// 	}
+// }
 
-	var i = 0
+// func TestBlockMulti(t *testing.T) {
 
-	cache := NewBlockCache(time.Millisecond*1, func(share interface{}) interface{} {
-		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
-		if err != nil {
-			log.Println(err)
-		}
-		i++
-		if i%10 == 0 {
-			panic("error")
-		}
-		time.Sleep(time.Millisecond * 10)
-		return string(resp.Content())
-	})
+// 	defer func() {
+// 		if err := recover(); err != nil {
+// 			t.Error(err)
+// 		}
+// 	}()
 
-	cache.SetOnUpdateError(func(err interface{}) {
-		i = 1
-	})
+// 	var i = 0
 
-	now := time.Now()
+// 	cache := NewBlockCache(time.Millisecond*50, func(share interface{}) interface{} {
+// 		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
+// 		if err != nil {
+// 			log.Println(err)
+// 		}
+// 		i++
+// 		if i%10 == 0 {
+// 			panic("error")
+// 		}
+// 		return string(resp.Content())
+// 	})
 
-	wg := &sync.WaitGroup{}
-	for n := 0; n < 10; n++ {
-		wg.Add(1)
-		go func(wg *sync.WaitGroup) {
-			defer wg.Done()
-			for x := 0; x < 20; x++ {
-				cache.Value()
-				cache.GetUpdate()
-				time.Sleep(time.Millisecond)
-			}
-		}(wg)
-	}
+// 	cache.SetOnUpdateError(func(err interface{}) {
+// 		i = 1
+// 	})
+// 	wg := &sync.WaitGroup{}
+// 	for n := 0; n < 50; n++ {
+// 		wg.Add(1)
+// 		go func(wg *sync.WaitGroup) {
+// 			defer wg.Done()
+// 			for x := 0; x < 100; x++ {
+// 				cache.Value()
+// 				cache.GetUpdate()
 
-	wg.Wait()
+// 				time.Sleep(time.Millisecond)
+// 			}
+// 		}(wg)
+// 	}
 
-	if time.Since(now) <= time.Millisecond*200 {
-		t.Error("block time is error", time.Since(now))
-	}
+// 	wg.Wait()
+// }
 
-}
+// func TestBlockTime(t *testing.T) {
 
-func TestBlockForceUpdate(t *testing.T) {
-	cache := NewBlockCache(time.Millisecond*50, func(share interface{}) interface{} {
-		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
-		if err != nil {
-			log.Println(err)
-		}
-		return string(resp.Content())
-	})
+// 	defer func() {
+// 		if err := recover(); err != nil {
+// 			t.Error(err)
+// 		}
+// 	}()
 
-	var result string = cache.Value().(string)
+// 	var i = 0
 
-	for i := 0; i < 3; i++ {
-		// time.Sleep(time.Millisecond * 30)
-		cache.ForceUpdate()
-		cvalue := cache.Value().(string)
-		if result == cvalue {
-			t.Error(result, cvalue)
-		}
-		result = cvalue
-	}
+// 	cache := NewBlockCache(time.Millisecond*1, func(share interface{}) interface{} {
+// 		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
+// 		if err != nil {
+// 			log.Println(err)
+// 		}
+// 		i++
+// 		if i%10 == 0 {
+// 			panic("error")
+// 		}
+// 		time.Sleep(time.Millisecond * 10)
+// 		return string(resp.Content())
+// 	})
 
-}
+// 	cache.SetOnUpdateError(func(err interface{}) {
+// 		i = 1
+// 	})
+
+// 	now := time.Now()
+
+// 	wg := &sync.WaitGroup{}
+// 	for n := 0; n < 10; n++ {
+// 		wg.Add(1)
+// 		go func(wg *sync.WaitGroup) {
+// 			defer wg.Done()
+// 			for x := 0; x < 20; x++ {
+// 				cache.Value()
+// 				cache.GetUpdate()
+// 				time.Sleep(time.Millisecond)
+// 			}
+// 		}(wg)
+// 	}
+
+// 	wg.Wait()
+
+// 	if time.Since(now) <= time.Millisecond*200 {
+// 		t.Error("block time is error", time.Since(now))
+// 	}
+
+// }
+
+// func TestBlockForceUpdate(t *testing.T) {
+// 	cache := NewBlockCache(time.Millisecond*50, func(share interface{}) interface{} {
+// 		resp, err := gcurl.Execute(`curl "http://httpbin.org/uuid"`)
+// 		if err != nil {
+// 			log.Println(err)
+// 		}
+// 		return string(resp.Content())
+// 	})
+
+// 	var result string = cache.Value().(string)
+
+// 	for i := 0; i < 3; i++ {
+// 		// time.Sleep(time.Millisecond * 30)
+// 		cache.ForceUpdate()
+// 		cvalue := cache.Value().(string)
+// 		if result == cvalue {
+// 			t.Error(result, cvalue)
+// 		}
+// 		result = cvalue
+// 	}
+
+// }

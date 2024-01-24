@@ -1,6 +1,6 @@
 module github.com/474420502/cache
 
-go 1.15
+go 1.20
 
 require (
 	github.com/474420502/gcurl v0.5.0

@@ -1,61 +1,59 @@
 // Package cache 缓存 异步更新
 package cache
 
-import (
-	"log"
-	"runtime"
-	"time"
-)
-
-type Cache interface {
-	SetShare(share interface{})
-	SetOnUpdateError(func(err interface{}))
-	Value() interface{}
-	ForceUpdate()
-	GetUpdate() time.Time
+type Cache[KEY comparable, VALUE any] struct {
+	lm *CacheLinkMap[KEY, VALUE]
 }
 
-// UpdateMehtod 更新方法
-type UpdateMehtod func(share interface{}) interface{}
+// type Cache interface {
+// 	SetShare(share interface{})
+// 	SetOnUpdateError(func(err interface{}))
+// 	Value() interface{}
+// 	ForceUpdate()
+// 	GetUpdate() time.Time
+// }
 
-// New 创建一个Cache对象timeupdate
-func New(interval time.Duration, updateMethod UpdateMehtod) Cache {
+// // UpdateMehtod 更新方法
+// type UpdateMehtod func(share interface{}) interface{}
 
-	cbackup := &cacheIntervalBackup{
-		isDestroy:     make(chan struct{}),
-		isForceUpdate: make(chan struct{}),
-		interval:      time.NewTicker(interval),
-		updateMehtod:  updateMethod,
-		onUpdateError: func(err interface{}) {
-			log.Println(err)
-		},
-	}
+// // New 创建一个Cache对象timeupdate
+// func New(interval time.Duration, updateMethod UpdateMehtod) Cache {
 
-	cache := &CacheInterval{
-		cache: cbackup,
-	}
+// 	cbackup := &cacheIntervalBackup{
+// 		isDestroy:     make(chan struct{}),
+// 		isForceUpdate: make(chan struct{}),
+// 		interval:      time.NewTicker(interval),
+// 		updateMehtod:  updateMethod,
+// 		onUpdateError: func(err interface{}) {
+// 			log.Println(err)
+// 		},
+// 	}
 
-	runtime.SetFinalizer(cache, func(obj *CacheInterval) {
-		obj.cache.Destroy()
-	})
+// 	cache := &CacheInterval{
+// 		cache: cbackup,
+// 	}
 
-	go func() {
-		for {
-			select {
-			case <-cbackup.isDestroy:
-				return
-			case <-cbackup.isForceUpdate:
-				func() {
-					defer func() { cbackup.isForceUpdate <- struct{}{} }()
-					cbackup.update()
-					<-cbackup.interval.C
-				}()
-			case <-cbackup.interval.C:
-				cbackup.update()
-			}
-		}
-	}()
+// 	runtime.SetFinalizer(cache, func(obj *CacheInterval) {
+// 		obj.cache.Destroy()
+// 	})
 
-	cbackup.ForceUpdate()
-	return cache
-}
+// 	go func() {
+// 		for {
+// 			select {
+// 			case <-cbackup.isDestroy:
+// 				return
+// 			case <-cbackup.isForceUpdate:
+// 				func() {
+// 					defer func() { cbackup.isForceUpdate <- struct{}{} }()
+// 					cbackup.update()
+// 					<-cbackup.interval.C
+// 				}()
+// 			case <-cbackup.interval.C:
+// 				cbackup.update()
+// 			}
+// 		}
+// 	}()
+
+// 	cbackup.ForceUpdate()
+// 	return cache
+// }
