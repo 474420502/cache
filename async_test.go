@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"fmt"
 	"log"
 	"testing"
 	"time"
@@ -51,4 +52,28 @@ func TestCase(t *testing.T) {
 		})
 	}
 
+}
+
+func TestCaseError(t *testing.T) {
+	ac := NewAsyncCache[*ABC](func(ctx *AsyncCacheContext[*ABC]) (*ABC, error) {
+		// uv := 1
+		// if ctx.current != nil {
+		// 	uv = ctx.current.X + 1
+		// }
+
+		// abc := &ABC{X: uv}
+
+		time.Sleep(time.Second)
+		log.Println("ABC created")
+		return nil, fmt.Errorf("error")
+	})
+
+	ac.SetError(func(ctx *AsyncCacheContext[*ABC]) {
+		err := ctx.Error()
+		if err == nil {
+			t.Error("err is not nil")
+		}
+	})
+
+	ac.WaitFirstUpdate(time.Second * 2)
 }

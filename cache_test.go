@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"log"
 	"strconv"
 	"testing"
 )
@@ -89,4 +90,30 @@ func stringSlicesEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func TestCacheLRU2(t *testing.T) {
+	cache := NewCacheLRU[int, string](32)
+
+	// 添加超过容量的数据，检查缓存淘汰
+	for i := 0; i < 33; i++ {
+		cache.Set(i, strconv.Itoa(i))
+	}
+
+	log.Println(cache.Values())
+
+	cache.Set(4, strconv.Itoa(4))
+
+	for i := 32; i >= 0; i-- {
+		cache.Remove(i)
+	}
+
+	if cache.Size() != 0 {
+		t.Error("size != 0")
+	}
+
+}
+
+func TestCacheLRU_Panic(t *testing.T) {
+
 }
